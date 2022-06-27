@@ -4,7 +4,8 @@
  *--------------------------------------------------------------------------------------------*/
 
 import assert = require('assert');
-import { DisposableStore } from 'vs/base/common/lifecycle';
+import { Disposable, DisposableStore } from 'vs/base/common/lifecycle';
+import { ensureNoDisposablesAreLeakedInTestSuite } from 'vs/base/test/common/utils';
 import { Range } from 'vs/editor/common/core/range';
 import { ITextModel } from 'vs/editor/common/model';
 import { EditorSimpleWorker } from 'vs/editor/common/services/editorSimpleWorker';
@@ -15,6 +16,8 @@ import { EditorWorkerServiceDiffComputer } from 'vs/workbench/contrib/mergeEdito
 import { MergeEditorModel } from 'vs/workbench/contrib/mergeEditor/browser/model/mergeEditorModel';
 
 suite('merge editor model', () => {
+	ensureNoDisposablesAreLeakedInTestSuite();
+
 	test('prepend line', async () => {
 		await testMergeModel(
 			{
@@ -139,7 +142,9 @@ async function testMergeModel(
 	fn: (model: MergeModelInterface) => void
 ): Promise<void> {
 	const disposables = new DisposableStore();
-	const modelInterface = new MergeModelInterface(options, createModelServices(disposables));
+	const modelInterface = disposables.add(
+		new MergeModelInterface(options, createModelServices(disposables))
+	);
 	await modelInterface.mergeModel.onInitialized;
 	await fn(modelInterface);
 	disposables.dispose();
@@ -158,15 +163,16 @@ function toSmallNumbersDec(value: number): string {
 	return value.toString().split('').map(c => smallNumbers[parseInt(c)]).join('');
 }
 
-class MergeModelInterface {
+class MergeModelInterface extends Disposable {
 	public readonly mergeModel: MergeEditorModel;
 
 	constructor(options: MergeModelOptions, instantiationService: IInstantiationService) {
-		const input1TextModel = createTextModel(options.input1, options.languageId);
-		const input2TextModel = createTextModel(options.input2, options.languageId);
-		const baseTextModel = createTextModel(options.base, options.languageId);
-		const resultTextModel = createTextModel(options.result, options.languageId);
-		this.mergeModel = instantiationService.createInstance(MergeEditorModel,
+		super();
+		const input1TextModel = this._register(createTextModel(options.input1, options.languageId));
+		const input2TextModel = this._register(createTextModel(options.input2, options.languageId));
+		const baseTextModel = this._register(createTextModel(options.base, options.languageId));
+		const resultTextModel = this._register(createTextModel(options.result, options.languageId));
+		this.mergeModel = this._register(instantiationService.createInstance(MergeEditorModel,
 			baseTextModel,
 			input1TextModel,
 			'',
@@ -192,7 +198,7 @@ class MergeModelInterface {
 					};
 				},
 			}
-		);
+		));
 	}
 
 	getProjections(): unknown {
@@ -235,11 +241,15 @@ class MergeModelInterface {
 			}))
 		);
 
-		return {
+		const result = {
 			base: baseTextModel.getValue(),
 			input1: input1TextModel.getValue(),
 			input2: input2TextModel.getValue(),
 		};
+		baseTextModel.dispose();
+		input1TextModel.dispose();
+		input2TextModel.dispose();
+		return result;
 	}
 
 	toggleConflict(conflictIdx: number, inputNumber: 1 | 2): void {
