@@ -321,6 +321,18 @@ export interface IForeignModuleFactory {
 declare const require: any;
 
 /**
+ * This interface allows to use ITextModel and ICommonModel.
+ * Unfortunately, ITextModel does not extend ICommonModel.
+ *
+ * @internal
+*/
+interface IDiffModel {
+	getLineContent(line: number): string;
+	getLineCount(): number;
+	getLinesContent(): string[];
+}
+
+/**
  * @internal
  */
 export class EditorSimpleWorker implements IRequestHandler, IDisposable {
@@ -388,8 +400,12 @@ export class EditorSimpleWorker implements IRequestHandler, IDisposable {
 			return null;
 		}
 
-		const originalLines = original.getLinesContent();
-		const modifiedLines = modified.getLinesContent();
+		return EditorSimpleWorker.computeDiff(original, modified, ignoreTrimWhitespace, maxComputationTime);
+	}
+
+	public static computeDiff(originalTextModel: IDiffModel, modifiedTextModel: IDiffModel, ignoreTrimWhitespace: boolean, maxComputationTime: number): IDiffComputationResult | null {
+		const originalLines = originalTextModel.getLinesContent();
+		const modifiedLines = modifiedTextModel.getLinesContent();
 		const diffComputer = new DiffComputer(originalLines, modifiedLines, {
 			shouldComputeCharChanges: true,
 			shouldPostProcessCharChanges: true,
@@ -399,7 +415,7 @@ export class EditorSimpleWorker implements IRequestHandler, IDisposable {
 		});
 
 		const diffResult = diffComputer.computeDiff();
-		const identical = (diffResult.changes.length > 0 ? false : this._modelsAreIdentical(original, modified));
+		const identical = (diffResult.changes.length > 0 ? false : this._modelsAreIdentical(originalTextModel, modifiedTextModel));
 		return {
 			quitEarly: diffResult.quitEarly,
 			identical: identical,
@@ -407,7 +423,7 @@ export class EditorSimpleWorker implements IRequestHandler, IDisposable {
 		};
 	}
 
-	private _modelsAreIdentical(original: ICommonModel, modified: ICommonModel): boolean {
+	private static _modelsAreIdentical(original: IDiffModel, modified: IDiffModel): boolean {
 		const originalLineCount = original.getLineCount();
 		const modifiedLineCount = modified.getLineCount();
 		if (originalLineCount !== modifiedLineCount) {
